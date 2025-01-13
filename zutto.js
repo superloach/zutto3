@@ -7,45 +7,62 @@ class Zutto {
     this.network = null;
     this.nodes = new vis.DataSet();
     this.edges = new vis.DataSet();
+    this.journalNameElement = document.getElementById("journalName");
+    this.journalName = "ichiji";
   }
 
   get journalName() {
-    return document.getElementById("journalName").textContent;
+    return this.journalNameElement.textContent;
+  }
+
+  set journalName(name) {
+    name = name.trim();
+    this.journalNameElement.textContent = name;
   }
 
   loadJournal() {
     const data = localStorage.getItem(this.journalName);
     if (data) {
-      const journal = JSON.parse(data);
-      this.nodes.clear();
-      this.edges.clear();
-      this.nodes.add(this.cleanNodes(journal.nodes));
-      this.edges.add(this.cleanEdges(journal.edges));
+      try {
+        const journal = JSON.parse(data);
+        this.nodes = new vis.DataSet(journal.nodes.map(this.cleanNode));
+        this.edges = new vis.DataSet(journal.edges.map(this.cleanEdge));
+      } catch (e) {
+        console.error(`Corrupted journal data for "${this.journalName}":`);
+        console.log(data);
+        alert(
+          `Failed to load journal "${this.journalName}". The data may be corrupted. Check the console for the raw data.`
+        );
+        // Reset to empty datasets if parse fails
+        this.nodes = new vis.DataSet();
+        this.edges = new vis.DataSet();
+      }
     }
   }
 
-  cleanNodes(nodes) {
-    return nodes.map((node) => {
-      return {
-        label: node.label,
-        id: node.id,
-        group: node.group,
-      };
-    });
+  cleanNode(node) {
+    return {
+      label: node.label.trim(),
+      id: node.id,
+      group: node.group.trim(),
+    };
   }
 
-  cleanEdges(edges) {
-    return edges.map((edge) => {
-      return {
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        id: edge.id,
-      };
-    });
+  cleanEdge(edge) {
+    return {
+      from: edge.from,
+      to: edge.to,
+      label: edge.label.trim(),
+      id: edge.id,
+    };
   }
 
   saveJournal() {
+    if (this.nodes.length === 0 && this.edges.length === 0) {
+      localStorage.removeItem(this.journalName);
+      return;
+    }
+
     localStorage.setItem(
       this.journalName,
       JSON.stringify({
@@ -133,10 +150,9 @@ class Zutto {
       const group = await prompt("Enter node group:", data.group || "");
       data.label = label;
       data.group = group;
+      callback(this.cleanNode(data));
+      this.saveJournal();
     }
-
-    callback(data);
-    this.saveJournal();
   }
 
   async handleEdge(data, callback) {
@@ -144,14 +160,8 @@ class Zutto {
 
     if (label !== null) {
       data.label = label;
-      callback(data);
+      callback(this.cleanEdge(data));
       this.saveJournal();
-    } else if (await confirm("Would you like to swap the edge direction?")) {
-      [data.from, data.to] = [data.to, data.from];
-      callback(data);
-      this.saveJournal();
-    } else {
-      callback(null);
     }
   }
 
@@ -195,11 +205,13 @@ class Zutto {
       edges: this.edges.get(selectedEdges),
     };
 
-    this.saveToJournal(targetJournalName, selectedData);
-  }
-
-  saveToJournal(journalName, data) {
-    console.log(`Saving to journal: ${journalName}`, data);
+    this.saveJournal();
+    this.journalName = targetJournalName;
+    this.loadJournal();
+    this.nodes.add(selectedData.nodes);
+    this.edges.add(selectedData.edges);
+    this.saveJournal();
+    this.renderJournal();
   }
 }
 
